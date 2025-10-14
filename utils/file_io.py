@@ -1,0 +1,39 @@
+# file_io.py
+import os
+import csv
+from constants import LANG_ROOT
+
+def load_csv(path, fieldnames):
+    rows = []
+    if os.path.exists(path):
+        with open(path, newline="", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            for r in reader:
+                rows.append({k: r.get(k, "") for k in fieldnames})
+    return rows
+
+def save_csv(path, fieldnames, rows):
+    d = os.path.dirname(path)
+    if d and not os.path.exists(d):
+        os.makedirs(d, exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in rows:
+            writer.writerow({k: r.get(k, "") for k in fieldnames})
+
+def ensure_language_dir(lang):
+    if not lang:
+        raise ValueError("Language name required")
+    p = os.path.join(LANG_ROOT, lang)
+    os.makedirs(p, exist_ok=True)
+    os.makedirs(os.path.join(p, "fonts"), exist_ok=True)
+    os.makedirs(os.path.join(p, "ipa_audio"), exist_ok=True)
+    return p
+
+def get_languages():
+    os.makedirs(LANG_ROOT, exist_ok=True)
+    return sorted([
+        d for d in os.listdir(LANG_ROOT)
+        if os.path.isdir(os.path.join(LANG_ROOT, d))
+    ])
