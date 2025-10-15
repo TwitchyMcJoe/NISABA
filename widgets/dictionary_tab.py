@@ -108,7 +108,7 @@ def update_dict_table(app):
 
 def add_word(app):
     # 8 columns: english, conlang, pos, gender, definition, pronunciation, consistent_phon, consistent_spell
-    empty = ("NEW", "NEW", "NEW", "NEW", "NEW", "NEW", "NEW", "NEW")
+    empty = ("NEW", "", "", "", "", "", "", "")
     app.dict_tree.insert("", "end", values=empty)
     
 

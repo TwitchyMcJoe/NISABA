@@ -23,7 +23,7 @@ def open_ipa_keyboard(app, target_entry, mode="full"):
 
     for idx, sym in enumerate(ipa_symbols):
         frame = tk.Frame(win)
-        frame.grid(row=idx//6, column=(idx%6), padx=4, pady=4)
+        frame.grid(row=idx//24, column=(idx%24), padx=4, pady=4)
 
         btn = Button(frame, text=sym, width=4,
                      command=lambda s=sym: target_entry.insert(tk.END, s))
