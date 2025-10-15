@@ -1,9 +1,14 @@
-import os, re
+# widgets/translation_tab.py
+import os
+import re
 import tkinter as tk
 from tkinter import ttk, messagebox
 from PIL import Image, ImageTk
 
-from constants import LANG_ROOT, GRAMMAR_TEXT, CONJ_FILE, CONJ_FIELDS, FONTS_DIRNAME, DICT_FILE, DICT_FIELDS
+from constants import (
+    LANG_ROOT, GRAMMAR_TEXT, CONJ_FILE, CONJ_FIELDS,
+    FONTS_DIRNAME, DICT_FILE, DICT_FIELDS
+)
 from utils.file_io import load_csv
 
 
@@ -14,13 +19,26 @@ def build_translation_tab(app):
     ttk.Label(tab, text="Translation Tool",
               font=("Segoe UI", 14, "bold")).pack(anchor="w", padx=10, pady=(8, 4))
 
+    # Tense selector (present/past/future)
+    tense_frame = ttk.Frame(tab)
+    tense_frame.pack(fill="x", padx=6, pady=(4, 2))
+    ttk.Label(tense_frame, text="Tense:").pack(side="left")
+    app.tense_var = tk.StringVar(value="present")
+    ttk.Combobox(
+        tense_frame,
+        textvariable=app.tense_var,
+        values=["present", "past", "future"],
+        width=10,
+        state="readonly"
+    ).pack(side="left", padx=4)
+
     # English → Conlang
     ttk.Label(tab, text="English → Conlang").pack(anchor="w", padx=8)
     app.trans_input = tk.Text(tab, height=4, wrap="word",
                               bg="#1b1b1b", fg="#eaeaea", insertbackground="white")
     app.trans_input.pack(fill="x", padx=8, pady=4)
     ttk.Button(tab, text="Translate to Conlang",
-               command=lambda: translate_to_conlang(app)).pack(anchor="w", padx=8, pady=(0,6))
+               command=lambda: translate_to_conlang(app)).pack(anchor="w", padx=8, pady=(0, 6))
 
     # Conlang → English
     ttk.Label(tab, text="Conlang → English").pack(anchor="w", padx=8)
@@ -28,7 +46,7 @@ def build_translation_tab(app):
                                   bg="#1b1b1b", fg="#eaeaea", insertbackground="white")
     app.trans_input_rev.pack(fill="x", padx=8, pady=4)
     ttk.Button(tab, text="Translate to English",
-               command=lambda: translate_to_english(app)).pack(anchor="w", padx=8, pady=(0,6))
+               command=lambda: translate_to_english(app)).pack(anchor="w", padx=8, pady=(0, 6))
 
     # Result
     ttk.Label(tab, text="Result:").pack(anchor="w", padx=8)
@@ -39,9 +57,11 @@ def build_translation_tab(app):
     # Pronunciation
     ttk.Label(tab, text="Pronunciation:").pack(anchor="w", padx=8)
     app.trans_pron = ttk.Label(tab, text="", background="#2b2b2b", foreground="lightblue")
-    app.trans_pron.pack(anchor="w", padx=8, pady=(0,6))
+    app.trans_pron.pack(anchor="w", padx=8, pady=(0, 6))
+
     # Pronunciation playback
-    play_frame = ttk.Frame(tab); play_frame.pack(anchor="w", padx=8, pady=(0,6))
+    play_frame = ttk.Frame(tab)
+    play_frame.pack(anchor="w", padx=8, pady=(0, 6))
     ttk.Button(play_frame, text="Play Pronunciation",
                command=lambda: play_pronunciation(app)).pack(side="left")
 
@@ -57,32 +77,56 @@ def build_translation_tab(app):
 # -------------------------
 
 def translate_to_conlang(app):
-    text = app.trans_input.get("1.0", tk.END).strip().lower()
-    if not text: return
+    text = app.trans_input.get("1.0", tk.END).strip()
+    if not text:
+        return
+    if not app.current_language:
+        messagebox.showwarning("No language", "Load a language first.")
+        return
     if not app.dictionary:
         messagebox.showwarning("No dictionary", "Load a language first.")
         return
 
-    words = text.split()
-    out = []
-    for w in words:
-        entry = app.dictionary.get(w)
-        if entry:
-            con = entry.get("conlang","")
-            pos = entry.get("pos","")
-        else:
-            con = f"[{w}]"
-        out.append(con)
+    # Parse grammar from the editor if present; else from grammar.txt
+    grammar_text = ""
+    if hasattr(app, "grammar_editor"):
+        grammar_text = app.grammar_editor.get("1.0", tk.END)
+        parsed = parse_grammar_text(grammar_text)
+    else:
+        parsed = parse_grammar_file(app)
 
-    result = " ".join(out)
+    # Apply phrase-level transforms (supports {placeholders} and "=>")
+    transformed_phrase = apply_phrase_transforms(text, parsed.get("transforms", []))
+
+    # Tokenize after transforms, then dictionary + word-level rules
+    out_words = []
+    for tok in transformed_phrase.split():
+        entry = app.dictionary.get(tok.lower())
+        if entry:
+            con = entry.get("conlang", "") or ""
+            pos = (entry.get("pos", "") or "").lower()
+        else:
+            con = f"[{tok}]"
+            pos = ""
+
+        # Prefixes/Suffixes from parsed grammar
+        con = apply_prefix_suffix(con, pos, parsed)
+
+        # Conjugations by selected tense (only for verbs)
+        if pos == "verb" and getattr(app, "conjugations", None):
+            tense = app.tense_var.get() if hasattr(app, "tense_var") else "present"
+            con = apply_conjugation_for_token(con, tok, app.conjugations, tense)
+
+        out_words.append(con)
+
+    result = " ".join(out_words)
+
+    # Output + pronunciation (first input word)
     app.trans_output.delete("1.0", tk.END)
     app.trans_output.insert(tk.END, result)
 
-    # Pronunciation (first word)
-    first = words[0] if words else ""
-    pron = ""
-    if first and first in app.dictionary:
-        pron = app.dictionary[first].get("pronunciation","")
+    first_word = text.split()[0] if text.split() else ""
+    pron = app.dictionary.get(first_word.lower(), {}).get("pronunciation", "") if first_word else ""
     app.trans_pron.configure(text=pron or "—")
 
     # Render glyphs
@@ -91,17 +135,18 @@ def translate_to_conlang(app):
 
 def translate_to_english(app):
     text = app.trans_input_rev.get("1.0", tk.END).strip().lower()
-    if not text: return
+    if not text:
+        return
     if not app.dictionary:
         messagebox.showwarning("No dictionary", "Load a language first.")
         return
 
-    rev = {v.get("conlang","").lower(): k for k,v in app.dictionary.items()}
+    # Reverse dictionary
+    rev = {v.get("conlang", "").lower(): k for k, v in app.dictionary.items() if v.get("conlang")}
     words = text.split()
     out = []
     for w in words:
-        eng = rev.get(w)
-        out.append(eng if eng else f"[{w}]")
+        out.append(rev.get(w, f"[{w}]"))
 
     result = " ".join(out)
     app.trans_output.delete("1.0", tk.END)
@@ -109,6 +154,195 @@ def translate_to_english(app):
     app.trans_pron.configure(text="—")
 
     render_glyphs(app, text)
+
+
+# -------------------------
+# Grammar parsing
+# -------------------------
+
+def parse_grammar_text(text):
+    """
+    Parse grammar rules from freeform editor text (old style):
+    - prefix(pos): a-, b-
+    - suffix(pos): -x, -y
+    - transforms: left => right
+    """
+    prefixes = {}
+    suffixes = {}
+    transforms = []
+    notes = []
+    for ln in text.splitlines():
+        L = ln.strip()
+        if not L or L.startswith("#"):
+            continue
+
+        if L.lower().startswith("prefix(") and ":" in L:
+            try:
+                inside = L[L.index("(") + 1:L.index(")")]
+                pos = inside.strip().lower()
+                val = L.split(":", 1)[1].strip()
+                prefixes[pos] = [v.strip() for v in val.split(",") if v.strip()]
+            except Exception:
+                notes.append(L)
+            continue
+
+        if L.lower().startswith("suffix(") and ":" in L:
+            try:
+                inside = L[L.index("(") + 1:L.index(")")]
+                pos = inside.strip().lower()
+                val = L.split(":", 1)[1].strip()
+                suffixes[pos] = [v.strip() for v in val.split(",") if v.strip()]
+            except Exception:
+                notes.append(L)
+            continue
+
+        if "=>" in L:
+            left, right = L.split("=>", 1)
+            # Trim stray quotes on right side if present
+            transforms.append((left.strip(), right.strip().strip('"').strip("'")))
+            continue
+
+        notes.append(L)
+
+    return {"prefixes": prefixes, "suffixes": suffixes, "transforms": transforms, "notes": notes}
+
+
+def parse_grammar_file(app):
+    """
+    Parse grammar.txt (sectioned format saved by grammar_tab):
+    - [PREFIXES] table with header "POS,Prefixes"
+    - [SUFFIXES] table with header "POS,Suffixes"
+    - [TRANSFORMS] lines like "{owner}'s {object} => the {object} of {owner}"
+    Returns same structure as parse_grammar_text.
+    """
+    prefixes = {}
+    suffixes = {}
+    transforms = []
+
+    if not app.current_language:
+        return {"prefixes": prefixes, "suffixes": suffixes, "transforms": transforms}
+
+    path = os.path.join(LANG_ROOT, app.current_language, GRAMMAR_TEXT)
+    if not os.path.exists(path):
+        return {"prefixes": prefixes, "suffixes": suffixes, "transforms": transforms}
+
+    section = None
+    with open(path, "r", encoding="utf-8") as f:
+        for raw in f:
+            ln = raw.strip()
+            if not ln:
+                continue
+            if ln.startswith("[") and ln.endswith("]"):
+                section = ln.strip("[]").upper()
+                continue
+
+            # Tables
+            if section == "PREFIXES":
+                # Skip header line like "POS,Prefixes"
+                if ln.lower().startswith("pos,"):
+                    continue
+                if "," in ln:
+                    pos, pfxs = ln.split(",", 1)
+                    pos = pos.strip().lower()
+                    # split by commas, allow multiple prefixes; skip empties
+                    values = [v.strip() for v in pfxs.split(",") if v.strip()]
+                    if values:
+                        prefixes[pos] = values
+
+            elif section == "SUFFIXES":
+                if ln.lower().startswith("pos,"):
+                    continue
+                if "," in ln:
+                    pos, sfxs = ln.split(",", 1)
+                    pos = pos.strip().lower()
+                    values = [v.strip() for v in sfxs.split(",") if v.strip()]
+                    if values:
+                        suffixes[pos] = values
+
+            elif section == "TRANSFORMS":
+                # Lines like: pattern => replacement
+                if "=>" in ln:
+                    left, right = ln.split("=>", 1)
+                    transforms.append((left.strip(), right.strip().strip('"').strip("'")))
+
+    return {"prefixes": prefixes, "suffixes": suffixes, "transforms": transforms}
+
+
+# -------------------------
+# Transform and word rules
+# -------------------------
+
+def apply_phrase_transforms(sentence, transforms):
+    """
+    Apply transforms to the sentence.
+    Supports placeholder templates like:
+      "{owner}'s {object} => the {object} of {owner}"
+    Captures apostrophes inside words via [\\w']+.
+    """
+    s = sentence
+    for pattern, replacement in transforms:
+        # Normalize quotes
+        pattern = pattern.strip().strip('"').strip("'")
+        replacement = replacement.strip().strip('"').strip("'")
+
+        # Find placeholders {name}
+        names = re.findall(r"\{(\w+)\}", pattern)
+        if not names:
+            # Simple literal replacement
+            s = s.replace(pattern, replacement)
+            continue
+
+        # Build regex: replace each {name} with a named group
+        regex = re.escape(pattern)
+        for name in names:
+            # Replace the escaped "{name}" with a named capture allowing apostrophes
+            regex = regex.replace(r"\{" + name + r"\}", fr"(?P<{name}>[\w']+)")
+        # Allow flexible spacing
+        regex = regex.replace(r"\ ", r"\s+")
+
+        try:
+            s = re.sub(regex, lambda m: replacement.format(**{n: m.group(n) for n in names}), s)
+        except Exception:
+            # Fallback: raw replacement if format fails
+            try:
+                s = re.sub(regex, replacement, s)
+            except Exception:
+                pass
+
+    return s
+
+
+def apply_prefix_suffix(con_word, pos, parsed):
+    if not con_word:
+        return con_word
+    pfx_list = parsed.get("prefixes", {}).get(pos, [])
+    sfx_list = parsed.get("suffixes", {}).get(pos, [])
+    if pfx_list:
+        con_word = pfx_list[0] + con_word
+    if sfx_list:
+        con_word = con_word + sfx_list[0]
+    return con_word
+
+
+def apply_conjugation_for_token(con_word, english_token, conjugations, tense):
+    """
+    Apply conjugation using the selected tense.
+    Prefers matching by the English token (row['english'] == english_token).
+    If not found, attempts matching by base == conlang base.
+    """
+    # 1) Try English match
+    for row in conjugations:
+        if (row.get("english") or "").lower() == (english_token or "").lower():
+            val = row.get(tense, "") or ""
+            return val if val else con_word
+
+    # 2) Fallback: match by conlang base
+    for row in conjugations:
+        if (row.get("base") or "").lower() == (con_word or "").lower():
+            val = row.get(tense, "") or ""
+            return val if val else con_word
+
+    return con_word
 
 
 # -------------------------
@@ -129,7 +363,7 @@ def render_glyphs(app, text):
     fonts = [d for d in os.listdir(fontpath) if os.path.isdir(os.path.join(fontpath, d))]
     if not fonts:
         return
-    mapping = load_csv(os.path.join(fontpath, fonts[0], "mapping.csv"), ["symbol","filename"])
+    mapping = load_csv(os.path.join(fontpath, fonts[0], "mapping.csv"), ["symbol", "filename"])
     sym_map = {m["symbol"]: m["filename"] for m in mapping if m.get("symbol")}
 
     sorted_syms = sorted(sym_map.keys(), key=len, reverse=True)
@@ -147,27 +381,33 @@ def render_glyphs(app, text):
                     try:
                         im = Image.open(path)
                         desired_h = 50
-                        w,h = im.size
-                        scale = desired_h/h if h else 1.0
-                        im2 = im.resize((int(w*scale), desired_h), Image.Resampling.LANCZOS)
+                        w, h = im.size
+                        scale = desired_h / h if h else 1.0
+                        im2 = im.resize((int(w * scale), desired_h), Image.Resampling.LANCZOS)
                         photo = ImageTk.PhotoImage(im2)
                         canvas.create_image(x, y, anchor="nw", image=photo)
                         canvas.image_refs.append(photo)
                         x += im2.width + 4
                         line_h = max(line_h, im2.height + 5)
                     except Exception:
-                        canvas.create_text(x, y, anchor="nw", text=sym, font=("Arial",18))
-                        x += 12*len(sym)
+                        canvas.create_text(x, y, anchor="nw", text=sym, font=("Arial", 18))
+                        x += 12 * len(sym)
                 else:
-                    canvas.create_text(x, y, anchor="nw", text=sym, font=("Arial",18))
-                    x += 12*len(sym)
-                i += len(sym); matched = True; break
+                    canvas.create_text(x, y, anchor="nw", text=sym, font=("Arial", 18))
+                    x += 12 * len(sym)
+                i += len(sym)
+                matched = True
+                break
         if not matched:
             ch = text[i]
-            canvas.create_text(x, y, anchor="nw", text=ch, font=("Arial",18))
-            x += 12; i += 1
+            canvas.create_text(x, y, anchor="nw", text=ch, font=("Arial", 18))
+            x += 12
+            i += 1
         if x > maxw - 60:
-            x = 10; y += line_h; line_h = 60
+            x = 10
+            y += line_h
+            line_h = 60
+
 
 # -------------------------
 # Pronunciation playback
@@ -182,11 +422,8 @@ def play_pronunciation(app):
         messagebox.showwarning("No language", "Load a language first.")
         return
 
-    #ipa_folder = os.path.join(LANG_ROOT, app.current_language, "ipa_audio")
     from utils.file_io import get_ipa_audio_dir
     ipa_folder = get_ipa_audio_dir()
-
-
     if not os.path.exists(ipa_folder):
         messagebox.showinfo("No audio", f"No ipa_audio folder for {app.current_language}.")
         return
@@ -199,9 +436,10 @@ def play_pronunciation(app):
         for ext in (".wav", ".mp3"):
             path = os.path.join(ipa_folder, f"{ch}{ext}")
             if os.path.exists(path):
-                found = True; played_any = True
+                found = True
+                played_any = True
                 try:
-                    # Prefer pydub if available
+                    # Prefer pydub if available, else playsound
                     try:
                         from pydub import AudioSegment
                         from pydub.playback import play as pydub_play

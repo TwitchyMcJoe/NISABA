@@ -1,9 +1,9 @@
 # app.py
 import tkinter as tk
 from tkinter import ttk, messagebox
-
-# Core
-from constants import LANG_ROOT
+import os
+from constants import LANG_ROOT, CONJ_FILE, CONJ_FIELDS
+from utils.file_io import load_csv
 from utils.file_io import get_languages
 # Tabs
 from widgets import import_export_tab, phonology_tab, fonts_tab, dictionary_tab
@@ -90,10 +90,25 @@ class ConlangApp(tk.Tk):
         """Called when a language is selected/created."""
         self.current_language = lang
         self.title(f"Conlang Assistant - {lang}")
-        # Load dictionary, phonology, numbers, grammar
+
+        langdir = os.path.join(LANG_ROOT, lang)
+
+        # Load dictionary, phonology, numbers
         self.load_dictionary(lang)
         self.load_phonology_files(lang)
         self.load_numbers(lang)
+
+        # 🔑 Load grammar rules from grammar.txt
+        self.load_grammar(langdir)
+
+        # 🔑 Load conjugations
+        conj_path = os.path.join(langdir, CONJ_FILE)
+        if os.path.exists(conj_path):
+            self.conjugations = load_csv(conj_path, CONJ_FIELDS)
+        else:
+            self.conjugations = []
+
+
         
     def enable_incell_editing(self, tree):
         def on_double_click(event):
@@ -139,6 +154,30 @@ class ConlangApp(tk.Tk):
             entry.bind("<Escape>", cancel_edit)
 
         tree.bind("<Double-1>", on_double_click)
+
+    def load_grammar(app, langdir):
+        grammar_path = os.path.join(langdir, "grammar.txt")
+        app.prefixes, app.suffixes, app.transforms = {}, {}, []
+        if not os.path.exists(grammar_path):
+            return
+        section = None
+        with open(grammar_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("[NOTES]"):
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    section = line.strip("[]").upper()
+                    continue
+                if section == "PREFIXES" and "," in line:
+                    pos, pref = line.split(",",1)
+                    if pref: app.prefixes[pos.strip().lower()] = pref.strip()
+                elif section == "SUFFIXES" and "," in line:
+                    pos, suff = line.split(",",1)
+                    if suff: app.suffixes[pos.strip().lower()] = suff.strip()
+                elif section == "TRANSFORMS" and "=>" in line:
+                    src, tgt = line.split("=>",1)
+                    app.transforms.append((src.strip(), tgt.strip()))
 
 
 
