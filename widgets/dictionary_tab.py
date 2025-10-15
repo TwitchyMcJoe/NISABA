@@ -35,6 +35,8 @@ def build_dictionary_tab(app):
     ]
     widths = [140,140,120,100,260,160,100,140,140]
 
+    app.dict_tree.bind("<Double-1>", lambda e: on_dict_double_click(app, e))
+
     for (col,txt),w in zip(headers,widths):
         app.dict_tree.heading(col, text=txt)
         app.dict_tree.column(col, width=w)
@@ -194,7 +196,9 @@ def play_selected_pronunciation(app):
         return
 
     # Root-level ipa_audio folder
-    audio_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ipa_audio"))
+    from utils.file_io import get_ipa_audio_dir
+    audio_dir = get_ipa_audio_dir()
+
 
     # Iterate through each IPA character
     for ch in pron:
@@ -220,20 +224,38 @@ def check_phonology_consistency(app, ipa_string):
             return False
     return True
 
+##def check_spelling_consistency(app, conlang_word, ipa_string):
+##    """Return True if applying spelling rules to IPA yields the conlang word."""
+##    langdir = ensure_language_dir(app.current_language)
+##    rules_path = os.path.join(langdir, "spelling_rules.txt")
+##    if not os.path.exists(rules_path):
+##        return True  # no rules defined, assume consistent
+##    with open(rules_path, "r", encoding="utf-8") as f:
+##        rules = [line.strip() for line in f if "->" in line]
+##    # apply rules sequentially
+##    spelling = ipa_string
+##    for rule in rules:
+##        src, tgt = rule.split("->", 1)
+##        spelling = spelling.replace(src.strip(), tgt.strip())
+##    return spelling == conlang_word
+
 def check_spelling_consistency(app, conlang_word, ipa_string):
     """Return True if applying spelling rules to IPA yields the conlang word."""
     langdir = ensure_language_dir(app.current_language)
-    rules_path = os.path.join(langdir, "spelling_rules.txt")
+    rules_path = os.path.join(langdir, "spelling_rules.csv")
     if not os.path.exists(rules_path):
         return True  # no rules defined, assume consistent
-    with open(rules_path, "r", encoding="utf-8") as f:
-        rules = [line.strip() for line in f if "->" in line]
-    # apply rules sequentially
+
+    rows = load_csv(rules_path, ["ipa", "romanization"])
+    rules = [(r["ipa"], r["romanization"]) for r in rows if r.get("ipa")]
+
     spelling = ipa_string
-    for rule in rules:
-        src, tgt = rule.split("->", 1)
-        spelling = spelling.replace(src.strip(), tgt.strip())
+    for ipa, roman in rules:
+        if ipa and roman:
+            spelling = spelling.replace(ipa, roman)
+
     return spelling == conlang_word
+
 
 def recheck_consistency(app):
     if not app.current_language:
@@ -253,3 +275,48 @@ def recheck_consistency(app):
         ))
 
     messagebox.showinfo("Consistency", "Rechecked dictionary consistency against phonology and spelling rules.")
+
+def on_dict_double_click(app, event):
+    """If user double-clicks a FAIL in Consistent (Spell), jump to Spelling Rules tab."""
+    region = app.dict_tree.identify("region", event.x, event.y)
+    if region != "cell":
+        return
+
+    rowid = app.dict_tree.identify_row(event.y)
+    colid = app.dict_tree.identify_column(event.x)
+    if not rowid or not colid:
+        return
+
+    col_index = int(colid.replace("#", "")) - 1
+    columns = app.dict_tree["columns"]
+    if col_index < 0 or col_index >= len(columns):
+        return
+    col_name = columns[col_index]
+
+    # Only trigger on the Consistent (Spell) column
+    if col_name != "cons_spell":
+        return
+
+    vals = app.dict_tree.item(rowid, "values")
+    cell_val = vals[col_index]
+    if cell_val != "FAIL":
+        return
+
+    # Jump to Phonology & Spelling → Spelling Rules
+    for i in range(app.notebook.index("end")):
+        if app.notebook.tab(i, "text") == "Phonology & Spelling":
+            app.notebook.select(i)
+            try:
+                phonology_tab = app.notebook.nametowidget(app.notebook.tabs()[i])
+                # Find the inner Notebook (sub_nb)
+                for child in phonology_tab.winfo_children():
+                    if isinstance(child, ttk.Notebook):
+                        sub_nb = child
+                        for j in range(sub_nb.index("end")):
+                            if sub_nb.tab(j, "text") == "Spelling Rules":
+                                sub_nb.select(j)
+                                break
+                        break
+            except Exception as e:
+                print("Could not switch to Spelling Rules:", e)
+            break

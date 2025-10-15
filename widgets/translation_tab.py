@@ -182,7 +182,11 @@ def play_pronunciation(app):
         messagebox.showwarning("No language", "Load a language first.")
         return
 
-    ipa_folder = os.path.join(LANG_ROOT, app.current_language, "ipa_audio")
+    #ipa_folder = os.path.join(LANG_ROOT, app.current_language, "ipa_audio")
+    from utils.file_io import get_ipa_audio_dir
+    ipa_folder = get_ipa_audio_dir()
+
+
     if not os.path.exists(ipa_folder):
         messagebox.showinfo("No audio", f"No ipa_audio folder for {app.current_language}.")
         return

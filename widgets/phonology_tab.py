@@ -69,15 +69,37 @@ def build_phonology_tab(app):
     app.syllable_text.pack(fill="both", expand=True, padx=6, pady=6)
     ttk.Button(frame_syl, text="Save", command=lambda: save_phonology_files(app)).pack(padx=6, pady=4)
 
+##    # Spelling
+##    frame_spell = ttk.Frame(sub_nb)
+##    sub_nb.add(frame_spell, text="Spelling Rules")
+##    ttk.Label(frame_spell, text="Spelling rules (pronunciation -> orthography)",
+##              font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=6, pady=(6, 2))
+##    app.spelling_text = tk.Text(frame_spell, height=10,
+##                                bg="#1b1b1b", fg="#eaeaea", insertbackground="white")
+##    app.spelling_text.pack(fill="both", expand=True, padx=6, pady=6)
+##    ttk.Button(frame_spell, text="Save", command=lambda: save_phonology_files(app)).pack(padx=6, pady=4)
+
     # Spelling
     frame_spell = ttk.Frame(sub_nb)
     sub_nb.add(frame_spell, text="Spelling Rules")
-    ttk.Label(frame_spell, text="Spelling rules (pronunciation -> orthography)",
+    ttk.Label(frame_spell, text="Spelling rules (IPA → Romanization)",
               font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=6, pady=(6, 2))
-    app.spelling_text = tk.Text(frame_spell, height=10,
-                                bg="#1b1b1b", fg="#eaeaea", insertbackground="white")
-    app.spelling_text.pack(fill="both", expand=True, padx=6, pady=6)
-    ttk.Button(frame_spell, text="Save", command=lambda: save_phonology_files(app)).pack(padx=6, pady=4)
+
+    # Treeview with two columns: IPA and Romanization
+    app.spelling_tree = ttk.Treeview(frame_spell,
+                                     columns=("ipa", "romanization"),
+                                     show="headings", height=12)
+    app.spelling_tree.heading("ipa", text="Pronunciation (IPA)")
+    app.spelling_tree.heading("romanization", text="Romanization")
+    app.spelling_tree.column("ipa", width=120)
+    app.spelling_tree.column("romanization", width=180)
+    app.spelling_tree.pack(fill="both", expand=True, padx=6, pady=6)
+
+    from utils.table_edit import enable_treeview_editing
+    enable_treeview_editing(app.spelling_tree)
+
+    ttk.Button(frame_spell, text="Reload", command=lambda: load_spelling_rules(app)).pack(side="left", padx=6, pady=4)
+    ttk.Button(frame_spell, text="Save", command=lambda: save_spelling_rules(app)).pack(side="left", padx=6, pady=4)
 
 
 # -------------------------
@@ -187,3 +209,43 @@ def attach_type_dropdown(tree):
         combo.bind("<FocusOut>", finish)
 
     tree.bind("<Double-1>", begin_edit_type, add="+")
+
+
+def load_spelling_rules(app):
+    """Populate spelling rules from phonology inventory + saved rules."""
+    if not app.current_language:
+        return
+    langdir = ensure_language_dir(app.current_language)
+
+    # Load phonology inventory
+    rows = load_csv(os.path.join(langdir, PHONO_FILE), PHONO_FIELDS)
+    phonemes = [r["ipa"] for r in rows if r.get("ipa")]
+
+    # Load saved spelling rules if present
+    rules_path = os.path.join(langdir, "spelling_rules.csv")
+    saved = {}
+    if os.path.exists(rules_path):
+        saved_rows = load_csv(rules_path, ["ipa", "romanization"])
+        saved = {r["ipa"]: r["romanization"] for r in saved_rows if r.get("ipa")}
+
+    # Populate tree
+    app.spelling_tree.delete(*app.spelling_tree.get_children())
+    for ipa in phonemes:
+        roman = saved.get(ipa, "")
+        app.spelling_tree.insert("", "end", values=(ipa, roman))
+
+
+def save_spelling_rules(app):
+    """Save spelling rules to CSV."""
+    if not app.current_language:
+        return
+    langdir = ensure_language_dir(app.current_language)
+    rules_path = os.path.join(langdir, "spelling_rules.csv")
+
+    rows = []
+    for iid in app.spelling_tree.get_children():
+        ipa, roman = app.spelling_tree.item(iid, "values")
+        rows.append({"ipa": ipa, "romanization": roman})
+
+    save_csv(rules_path, ["ipa", "romanization"], rows)
+    messagebox.showinfo("Saved", f"Spelling rules saved for {app.current_language}.")

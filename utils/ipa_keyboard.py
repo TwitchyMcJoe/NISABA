@@ -17,7 +17,9 @@ def open_ipa_keyboard(app, target_entry, mode="full"):
         rows = load_csv(os.path.join(langdir, "phonology.csv"), ["ipa","example","type","notes"])
         ipa_symbols = [r["ipa"] for r in rows if r.get("ipa")]
 
-    audio_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ipa_audio"))
+    from utils.file_io import get_ipa_audio_dir
+    audio_dir = get_ipa_audio_dir()
+
 
     for idx, sym in enumerate(ipa_symbols):
         frame = tk.Frame(win)

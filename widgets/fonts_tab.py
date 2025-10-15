@@ -6,7 +6,7 @@ from PIL import Image, ImageTk
 from utils.file_io import load_csv, save_csv
 from constants import LANG_ROOT, FONTS_DIRNAME
 from utils.font_export import export_font_ttf
-
+from utils.fonttools_bitmap_export import export_font_ttf_bitmap
 
 def build_fonts_tab(app):
     """Attach the Fonts tab to the main notebook."""
@@ -46,8 +46,8 @@ def build_fonts_tab(app):
     ttk.Button(ops, text="Replace Image", command=lambda: replace_font_image(app)).pack(side="left", padx=4)
     ttk.Button(ops, text="Delete Symbol", command=lambda: delete_font_symbol(app)).pack(side="left", padx=4)
     ttk.Button(ops, text="Save Mapping", command=lambda: save_current_font_mapping(app)).pack(side="left", padx=4)
-    ttk.Button(ops, text="Export to TTF", command=lambda: export_font_ttf(app)).pack(side="left", padx=4)
-
+    #ttk.Button(ops, text="Export to TTF", command=lambda: export_font_ttf(app)).pack(side="left", padx=4)
+    ttk.Button(ops, text="Export to TTF (bitmap)", command=lambda: export_font_ttf_bitmap(app)).pack(side="left", padx=4)
     preview = ttk.Frame(tab); preview.pack(fill="x", padx=6, pady=6)
     ttk.Label(preview, text="Preview:").pack(side="left")
     app.font_preview_label = ttk.Label(preview)

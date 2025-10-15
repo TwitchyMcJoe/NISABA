@@ -44,9 +44,9 @@ def build_compare_tab(app):
     frame_fonts = ttk.Frame(subnb); subnb.add(frame_fonts, text="Fonts")
     build_fonts_compare(frame_fonts)
 
-    # Translation (placeholder)
+    # Translation
     frame_trans = ttk.Frame(subnb); subnb.add(frame_trans, text="Translation")
-    ttk.Label(frame_trans, text="Translation comparison not yet implemented").pack(padx=10, pady=10)
+    build_translation_compare(frame_trans)
 
 
 # -------------------------
@@ -273,3 +273,55 @@ def make_thumbnail(path):
         return ImageTk.PhotoImage(img)
     except Exception:
         return None
+
+
+def build_translation_compare(frame):
+    top = ttk.Frame(frame); top.pack(fill="x", padx=6, pady=6)
+
+    ttk.Label(top, text="Language A:").pack(side="left")
+    lang_a = ttk.Combobox(top, values=get_languages(), width=20); lang_a.pack(side="left", padx=4)
+
+    ttk.Label(top, text="Language B:").pack(side="left")
+    lang_b = ttk.Combobox(top, values=get_languages(), width=20); lang_b.pack(side="left", padx=4)
+
+    ttk.Label(top, text="English Input:").pack(side="left", padx=(12,0))
+    input_entry = tk.Entry(top, width=40); input_entry.pack(side="left", padx=4)
+
+    ttk.Button(top, text="Compare Translation",
+               command=lambda: compare()).pack(side="left", padx=6)
+
+    # Output text areas
+    out_frame = ttk.Frame(frame); out_frame.pack(fill="both", expand=True, padx=6, pady=6)
+    text_a = tk.Text(out_frame, height=8, wrap="word",
+                     bg="#1b1b1b", fg="#eaeaea", insertbackground="white")
+    text_b = tk.Text(out_frame, height=8, wrap="word",
+                     bg="#1b1b1b", fg="#eaeaea", insertbackground="white")
+    text_a.pack(side="left", fill="both", expand=True, padx=4)
+    text_b.pack(side="left", fill="both", expand=True, padx=4)
+
+    def compare():
+        la, lb = lang_a.get(), lang_b.get()
+        phrase = input_entry.get().strip().lower()
+        if not la or not lb or la == lb:
+            messagebox.showwarning("Select", "Choose two different languages.")
+            return
+        if not phrase:
+            return
+
+        # Load dictionaries
+        dict_a = load_lang_dict(la)
+        dict_b = load_lang_dict(lb)
+
+        # Translate word by word
+        def translate(phrase, d):
+            words = phrase.split()
+            out = []
+            for w in words:
+                out.append(d.get(w, f"[{w}]"))
+            return " ".join(out)
+
+        trans_a = translate(phrase, dict_a)
+        trans_b = translate(phrase, dict_b)
+
+        text_a.delete("1.0", tk.END); text_a.insert(tk.END, f"{la}:\n{trans_a}")
+        text_b.delete("1.0", tk.END); text_b.insert(tk.END, f"{lb}:\n{trans_b}")
