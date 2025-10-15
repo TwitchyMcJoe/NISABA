@@ -164,11 +164,13 @@ def load_phonology_files(app, lang):
         with open(ptxt, "r", encoding="utf-8") as f:
             app.syllable_text.delete("1.0", tk.END)
             app.syllable_text.insert(tk.END, f.read())
-    spath = os.path.join(langdir, "spelling_rules.txt")
-    if os.path.exists(spath):
-        with open(spath, "r", encoding="utf-8") as f:
-            app.spelling_text.delete("1.0", tk.END)
-            app.spelling_text.insert(tk.END, f.read())
+##    spath = os.path.join(langdir, "spelling_rules.txt")
+##    if os.path.exists(spath):
+##        with open(spath, "r", encoding="utf-8") as f:
+##            app.spelling_text.delete("1.0", tk.END)
+##            app.spelling_text.insert(tk.END, f.read())
+    from widgets.phonology_tab import load_spelling_rules
+    load_spelling_rules(app)
 
 from tkinter import ttk
 
